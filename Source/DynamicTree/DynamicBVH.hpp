@@ -49,7 +49,7 @@ namespace __hidden_DynamicBVH{
     
 
     template<typename FloatType>
-    struct MS_ALIGN(16) AABB2D{
+    struct alignas(16) AABB2D{
         typedef UE::Math::TVector2<FloatType> Type;
         typedef typename VectorRegisterFinder<FloatType>::Type VectorType;
         
@@ -218,7 +218,7 @@ namespace __hidden_DynamicBVH{
     constexpr AABB2D<FloatType> AABB2DError(){ return AABB2D<FloatType>{ UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>) }; }
 
     template<typename FloatType>
-    struct MS_ALIGN(16) AABB{
+    struct alignas(16) AABB{
         typedef UE::Math::TVector<FloatType> Type;
         typedef typename VectorRegisterFinder<FloatType>::Type VectorType;
         
@@ -371,11 +371,11 @@ namespace __hidden_DynamicBVH{
         VectorStoreAligned(XMMUpper, &Lhs->Upper);
     }
     template<typename FloatType>
-    bool operator==(const AABB<FloatType>& lhs, const AABB<FloatType>& rhs){
-        typename AABB<FloatType>::VectorType XMMLhsLower = VectorLoadAligned(&lhs.Lower);
-        typename AABB<FloatType>::VectorType XMMLhsUpper = VectorLoadAligned(&lhs.Upper);
-        typename AABB<FloatType>::VectorType XMMRhsLower = VectorLoadAligned(&rhs.Lower);
-        typename AABB<FloatType>::VectorType XMMRhsUpper = VectorLoadAligned(&rhs.Upper);
+    bool operator==(const AABB<FloatType>& Lhs, const AABB<FloatType>& Rhs){
+        typename AABB<FloatType>::VectorType XMMLhsLower = VectorLoadAligned(&Lhs.Lower);
+        typename AABB<FloatType>::VectorType XMMLhsUpper = VectorLoadAligned(&Lhs.Upper);
+        typename AABB<FloatType>::VectorType XMMRhsLower = VectorLoadAligned(&Rhs.Lower);
+        typename AABB<FloatType>::VectorType XMMRhsUpper = VectorLoadAligned(&Rhs.Upper);
 
         typename AABB<FloatType>::VectorType XMMDiff = VectorSubtract(XMMLhsLower, XMMRhsLower);
         XMMDiff = VectorAbs(XMMDiff);
@@ -399,7 +399,7 @@ namespace __hidden_DynamicBVH{
     constexpr AABB<FloatType> AABBError(){ return AABB<FloatType>{ UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>), UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>) }; }
 
     template<typename SizeType, typename BoundType>
-    struct MS_ALIGN(16) Node{
+    struct alignas(16) Node{
         union{
             SizeType Parent;
             SizeType Next;
@@ -441,7 +441,7 @@ namespace __hidden_DynamicBVH{
 
 
     public:
-        void Push(const ElementType& element){
+        void Push(const ElementType& Element){
             if(Count == Capacity){
                 ElementType* Old = Stack;
                 Capacity <<= 1;
@@ -451,7 +451,7 @@ namespace __hidden_DynamicBVH{
                     Allocator::Deallocate(Old);
             }
 
-            Stack[Count] = element;
+            Stack[Count] = Element;
             ++Count;
         }
         ElementType Pop(){
@@ -916,33 +916,6 @@ public:
     typename DataContainer::TRangedForConstIterator end()const{ return Data.end(); }
 
 public:
-    template<typename FUNC>
-    void Iterate(FUNC&& Callback){
-        for(auto& Wrapped : Data){
-            Callback(Wrapped.template Get<0>(), Wrapped.template Get<1>());
-        }
-    }
-    template<typename FUNC>
-    void IterateConst(FUNC&& Callback)const{
-        for(const auto& Wrapped : Data){
-            Callback(Wrapped.template Get<0>(), Wrapped.template Get<1>());
-        }
-    }
-    template<typename FUNC>
-    void BreakableIterate(FUNC&& Callback){
-        for(auto& Wrapped : Data){
-            if(!Callback(Wrapped.template Get<0>(), Wrapped.template Get<1>()))
-                return;
-        }
-    }
-    template<typename FUNC>
-    void BreakableIterateConst(FUNC&& Callback)const{
-        for(const auto& Wrapped : Data){
-            if(!Callback(Wrapped.template Get<0>(), Wrapped.template Get<1>()))
-                return;
-        }
-    }
-
     template<typename COLLCHECK, typename FUNC>
     void Query(COLLCHECK&& CollCheck, FUNC&& Callback){
         __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;

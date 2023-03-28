@@ -1,0 +1,22 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "{745387A9-4666-4D34-4671-EB83B0AD19C5}",
+	"Category": "",
+	"Description": "",
+	"Modules": [
+		{
+			"Name": "DynamicTree",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		}
+	]
+}

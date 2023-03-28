@@ -476,15 +476,6 @@ namespace __hidden_DynamicBVH{
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-struct TBVHAllocator{
-    typedef FDefaultSetAllocator DataAllocator;
-    typedef int32 SizeType;
-    typedef double FloatType;
-
-    static void* Allocate(SizeType Size, SizeType Align){ return FMemory::Malloc(Size, Align); }
-    static void Deallocate(void* P){ FMemory::Free(P); }
-};
-
 template<typename SizeType>
 struct TBVHBound2D : __hidden_DynamicBVH::AABB2D<SizeType>{
     static const UE::Math::TVector2<SizeType> Epsilon;
@@ -641,6 +632,15 @@ const TBVHBound<SizeType> TBVHBound<SizeType>::Error = __hidden_DynamicBVH::AABB
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+struct TBVHAllocator{
+    typedef FDefaultSetAllocator DataAllocator;
+    typedef int32 SizeType;
+    typedef double FloatType;
+
+    static void* Allocate(SizeType Size, SizeType Align){ return FMemory::Malloc(Size, Align); }
+    static void Deallocate(void* P){ FMemory::Free(P); }
+};
+
 template<typename InElementType, typename InAllocator = TBVHAllocator, typename BoundType = TBVHBound<typename InAllocator::FloatType>, int32 QueryStackCapacity = 1 << 11>
 class TDynamicBVH{
 public:
@@ -762,10 +762,6 @@ public:
         return *this;
     }
     TDynamicBVH& operator=(TDynamicBVH&& Other)noexcept{
-        for(SizeType i = 0; i < NodeCount; ++i){
-            if(Nodes[i].IsLeaf())
-                Nodes[i].Data.~ElementType();
-        }
         if(Nodes)
             Allocator::Deallocate(Nodes);
 

@@ -19,15 +19,16 @@ namespace __hidden_DynamicBVH{
     template<typename FloatType>
     static constexpr FloatType FloatMin = 0;
     template<>
-    static constexpr float FloatMin<float> = FLT_MIN;
+    constexpr float FloatMin<float> = FLT_MIN;
     template<>
-    static constexpr float FloatMin<double> = DBL_MIN;
+    constexpr float FloatMin<double> = DBL_MIN;
+    
     template<typename FloatType>
     static constexpr FloatType FloatMax = 0;
     template<>
-    static constexpr float FloatMax<float> = FLT_MAX;
+    constexpr float FloatMax<float> = FLT_MAX;
     template<>
-    static constexpr float FloatMax<double> = DBL_MAX;
+    constexpr float FloatMax<double> = DBL_MAX;
 
 
     template<typename FloatType>
@@ -40,12 +41,13 @@ namespace __hidden_DynamicBVH{
 
     template<typename FloatType>
     static constexpr typename VectorRegisterFinder<FloatType>::Type VectorTwo = MakeVectorRegisterConstant(static_cast<FloatType>(2), static_cast<FloatType>(2), static_cast<FloatType>(2), static_cast<FloatType>(2));
+    
     template<typename FloatType>
     static constexpr typename VectorRegisterFinder<FloatType>::Type VectorKindaSmallNumber = MakeVectorRegisterConstant(static_cast<FloatType>(0), static_cast<FloatType>(0), static_cast<FloatType>(0), static_cast<FloatType>(0));
     template<>
-    static constexpr VectorRegisterFinder<float>::Type VectorKindaSmallNumber<float> = MakeVectorRegisterFloatConstant(KINDA_SMALL_NUMBER, KINDA_SMALL_NUMBER, KINDA_SMALL_NUMBER, KINDA_SMALL_NUMBER);
+    constexpr VectorRegisterFinder<float>::Type VectorKindaSmallNumber<float> = MakeVectorRegisterFloatConstant(KINDA_SMALL_NUMBER, KINDA_SMALL_NUMBER, KINDA_SMALL_NUMBER, KINDA_SMALL_NUMBER);
     template<>
-    static constexpr VectorRegisterFinder<double>::Type VectorKindaSmallNumber<double> = MakeVectorRegisterDoubleConstant(DOUBLE_KINDA_SMALL_NUMBER, DOUBLE_KINDA_SMALL_NUMBER, DOUBLE_KINDA_SMALL_NUMBER, DOUBLE_KINDA_SMALL_NUMBER);
+    constexpr VectorRegisterFinder<double>::Type VectorKindaSmallNumber<double> = MakeVectorRegisterDoubleConstant(DOUBLE_KINDA_SMALL_NUMBER, DOUBLE_KINDA_SMALL_NUMBER, DOUBLE_KINDA_SMALL_NUMBER, DOUBLE_KINDA_SMALL_NUMBER);
     
 
     template<typename FloatType>
@@ -209,13 +211,13 @@ namespace __hidden_DynamicBVH{
         return true;
     }
     template<typename FloatType>
-    constexpr UE::Math::TVector2<FloatType> AABB2DEpsilon(){ return UE::Math::TVector2<FloatType>(); }
+    inline UE::Math::TVector2<FloatType> AABB2DEpsilon(){ return UE::Math::TVector2<FloatType>(); }
     template<>
-    constexpr UE::Math::TVector2<float> AABB2DEpsilon(){ return UE::Math::TVector2<float>(0.0001f, 0.0001f); }
+    inline UE::Math::TVector2<float> AABB2DEpsilon<float>(){ return UE::Math::TVector2<float>(0.0001f, 0.0001f); }
     template<>
-    constexpr UE::Math::TVector2<double> AABB2DEpsilon(){ return UE::Math::TVector2<double>(0.0001, 0.0001); }
+    inline UE::Math::TVector2<double> AABB2DEpsilon<double>(){ return UE::Math::TVector2<double>(0.0001, 0.0001); }
     template<typename FloatType>
-    constexpr AABB2D<FloatType> AABB2DError(){ return AABB2D<FloatType>{ UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>) }; }
+    inline AABB2D<FloatType> AABB2DError(){ return AABB2D<FloatType>{ UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>) }; }
 
     template<typename FloatType>
     struct alignas(16) AABB{
@@ -390,13 +392,13 @@ namespace __hidden_DynamicBVH{
         return true;
     }
     template<typename FloatType>
-    constexpr UE::Math::TVector<FloatType> AABBEpsilon(){ return UE::Math::TVector<FloatType>(); }
+    inline UE::Math::TVector<FloatType> AABBEpsilon(){ return UE::Math::TVector<FloatType>(); }
     template<>
-    constexpr UE::Math::TVector<float> AABBEpsilon(){ return UE::Math::TVector<float>(0.0001f, 0.0001f, 0.0001f); }
+    inline UE::Math::TVector<float> AABBEpsilon<float>(){ return UE::Math::TVector<float>(0.0001f, 0.0001f, 0.0001f); }
     template<>
-    constexpr UE::Math::TVector<double> AABBEpsilon(){ return UE::Math::TVector<double>(0.0001, 0.0001, 0.0001); }
+    inline UE::Math::TVector<double> AABBEpsilon<double>(){ return UE::Math::TVector<double>(0.0001, 0.0001, 0.0001); }
     template<typename FloatType>
-    constexpr AABB<FloatType> AABBError(){ return AABB<FloatType>{ UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>), UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>) }; }
+    inline AABB<FloatType> AABBError(){ return AABB<FloatType>{ UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>), UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>) }; }
 
     template<typename SizeType, typename BoundType>
     struct alignas(16) Node{
@@ -820,7 +822,7 @@ public:
     SizeType CreateProxy(const BoundType& Bound, ARGS&&... Args){
         SizeType ProxyID = AllocateNode();
         
-        Nodes[ProxyID].Bound = BoundType::Expand(Bound, __hidden_DynamicBVH::FatExtension);
+        Nodes[ProxyID].Bound = BoundType::Expand(Bound, __hidden_DynamicBVH::FatExtension<FloatType>);
         Nodes[ProxyID].Height = 0;
         Nodes[ProxyID].bMoved = true;
 

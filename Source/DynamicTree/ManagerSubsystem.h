@@ -14,6 +14,7 @@
 
 
 class AManagedActor;
+class ADynamicActor;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,11 +44,15 @@ public:
 
 
 private:
-    TDynamicBVH<AManagedActor*> Tree;
+    TDynamicBVH<TWeakObjectPtr<AManagedActor>> Tree;
+
+    TArray<TWeakObjectPtr<AManagedActor>> Whole;
+    TArray<TWeakObjectPtr<ADynamicActor>> Dynamics;
 
 
 public:
     friend AManagedActor;
+    friend ADynamicActor;
 };
 
 

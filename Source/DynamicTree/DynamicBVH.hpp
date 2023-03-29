@@ -448,7 +448,7 @@ namespace __hidden_DynamicBVH{
                 ElementType* Old = Stack;
                 Capacity <<= 1;
                 Stack = reinterpret_cast<ElementType*>(Allocator::Allocate(Capacity * sizeof(ElementType), 0));
-                FPlatformMemory::Memcpy(Stack, Capacity * sizeof(ElementType), Old, Count * sizeof(ElementType));
+                FPlatformMemory::Memcpy(Stack, Old, Count * sizeof(ElementType));
                 if(Old != Array)
                     Allocator::Deallocate(Old);
             }
@@ -851,17 +851,17 @@ public:
         check(0 <= ProxyID && ProxyID < NodeCapacity);
         check(Nodes[ProxyID].IsLeaf());
 
-        BoundType FatBound = BoundType::Expand(Bound, __hidden_DynamicBVH::FatExtension);
+        BoundType FatBound = BoundType::Expand(Bound, __hidden_DynamicBVH::FatExtension<FloatType>);
 
         const BoundType& TreeBound = Nodes[ProxyID].Bound;
         if(TreeBound == FatBound)
             return 0;
 
-        const typename BoundType::Type D = __hidden_DynamicBVH::AABBMultiplier * Displacement;
+        const typename BoundType::Type D = __hidden_DynamicBVH::AABBMultiplier<FloatType> * Displacement;
         FatBound.ExpandBySign(D);
 
         if(TreeBound.Contains(Bound)){
-            BoundType HugeBound = BoundType::Expand(FatBound, 4 * __hidden_DynamicBVH::FatExtension);
+            BoundType HugeBound = BoundType::Expand(FatBound, 4 * __hidden_DynamicBVH::FatExtension<FloatType>);
             if(HugeBound.Contains(TreeBound))
                 return -1;
         }
@@ -906,7 +906,7 @@ public:
     BoundType GetBound(SizeType ProxyID)const{
         check(0 <= ProxyID && ProxyID < NodeCapacity);
         
-        BoundType Bound = BoundType::Expand(Nodes[ProxyID].Bound, -__hidden_DynamicBVH::FatExtension);
+        BoundType Bound = BoundType::Expand(Nodes[ProxyID].Bound, -__hidden_DynamicBVH::FatExtension<FloatType>);
 
         return Bound;
     }

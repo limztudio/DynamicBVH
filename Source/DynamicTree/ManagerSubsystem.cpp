@@ -285,7 +285,7 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
 
                     Actor->SetFlag(1);
                 }
-                ); 
+            );
         }
         else{
             for(TWeakObjectPtr<AManagedActor>& Actor : Whole){

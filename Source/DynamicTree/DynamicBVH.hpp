@@ -448,7 +448,7 @@ namespace __hidden_DynamicBVH{
                 ElementType* Old = Stack;
                 Capacity <<= 1;
                 Stack = reinterpret_cast<ElementType*>(Allocator::Allocate(Capacity * sizeof(ElementType), 0));
-                memcpy_s(Stack, Capacity * sizeof(ElementType), Old, Count * sizeof(ElementType));
+                FPlatformMemory::Memcpy(Stack, Capacity * sizeof(ElementType), Old, Count * sizeof(ElementType));
                 if(Old != Array)
                     Allocator::Deallocate(Old);
             }
@@ -662,7 +662,7 @@ public:
         NodeCount = 0;
 
         Nodes = reinterpret_cast<NodeType*>(Allocator::Allocate(NodeCapacity * sizeof(NodeType), 16));
-        memset(Nodes, 0, NodeCapacity * sizeof(NodeType));
+        FPlatformMemory::Memzero(Nodes, NodeCapacity * sizeof(NodeType));
 
         for(SizeType i = 0; i < NodeCapacity - 1; ++i){
             Nodes[i].Next = i + 1;
@@ -801,7 +801,7 @@ public:
 
         if(!Nodes)
             Nodes = reinterpret_cast<NodeType*>(Allocator::Allocate(NodeCapacity * sizeof(NodeType), 16));
-        memset(Nodes, 0, NodeCapacity * sizeof(NodeType));
+        FPlatformMemory::Memzero(Nodes, NodeCapacity * sizeof(NodeType));
 
         for(SizeType i = 0; i < NodeCapacity - 1; ++i){
             Nodes[i].Next = i + 1;
@@ -1177,7 +1177,7 @@ private:
                 Nodes[i] = MoveTemp(OldNodes[i]);
             Allocator::Deallocate(OldNodes);
 
-            memset(&Nodes[NodeCount], 0, (NodeCapacity - NodeCount) * sizeof(NodeType));
+            FPlatformMemory::Memzero(&Nodes[NodeCount], (NodeCapacity - NodeCount) * sizeof(NodeType));
             for(SizeType i = NodeCount; i < NodeCapacity - 1; ++i){
                 Nodes[i].Next = i + 1;
                 Nodes[i].Height = -1;
@@ -1576,7 +1576,7 @@ private:
 
 
 template<typename InElementType, typename InAllocator = TBVHAllocator, typename BoundType = TBVHBound2D<typename InAllocator::FloatType>, int32 QueryStackCapacity = 1 << 11>
-using TDynamicBVH2D = TDynamicBVH<InElementType, BoundType, InAllocator, QueryStackCapacity>; 
+using TDynamicBVH2D = TDynamicBVH<InElementType, BoundType, InAllocator, QueryStackCapacity>;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

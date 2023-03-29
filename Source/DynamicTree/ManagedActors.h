@@ -5,7 +5,7 @@
 #include "DynamicBVH.hpp"
 
 #include "Engine/StaticMeshActor.h"
-#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 
 #include "ManagedActors.generated.h"
 
@@ -26,20 +26,23 @@ public:
     void ClearFlag(){ FlagState = 0; }
     void SetFlag(uint8 Flag){ FlagState |= Flag; }
     
-    void ChangeColour();
+    void ChangeMaterial();
     
     const TBVHBound<double>& GetWorldBound()const{ return WorldBound; }
     int32 GetID()const{ return ID; }
 
+
+public:
+    UPROPERTY(EditAnywhere)
+    TObjectPtr<UMaterialInterface> NormalMaterial;
+    UPROPERTY(EditAnywhere)
+    TObjectPtr<UMaterialInterface> DetectedMaterial;
     
 protected:
     TBVHBound<double> LocalBound, WorldBound;
     int32 ID = -1;
 
 private:
-    UPROPERTY(Transient)
-    TObjectPtr<UMaterialInstanceDynamic> Material;
-
     uint8 FlagState = 0;
 };
 

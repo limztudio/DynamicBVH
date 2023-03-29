@@ -5,13 +5,12 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-#define MOVE_SPEED 3
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-extern TAutoConsoleVariable<bool> CVarManagerUseBVH;
+TAutoConsoleVariable<float> CVarDynamicSpeed(
+    TEXT("dynamic.speed"),
+    1000.f,
+    TEXT("Dynamic actor move speed"),
+    ECVF_Default
+);
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -72,9 +71,6 @@ static FVector4f FastRandomF4(){
 void AManagedActor::BeginPlay(){
     Super::BeginPlay();
 
-    if(TObjectPtr<UStaticMeshComponent> Component = GetStaticMeshComponent(); IsValid(Component))
-        Material = Component->CreateAndSetMaterialInstanceDynamic(0);
-
     do{
         const UWorld* World = GetWorld();
         if(!World)
@@ -89,19 +85,15 @@ void AManagedActor::BeginPlay(){
             WorldBound = GetComponentsBoundingBox(true, true);
             LocalBound = decltype(LocalBound)(WorldBound.Lower - InitialPos, WorldBound.Upper - InitialPos);
         }
-        
-        if(CVarManagerUseBVH.GetValueOnGameThread()){
-            ID = Subsystem->Tree.CreateProxy(WorldBound, this);
-            ensure(ID != -1);
-        }
-        else{
-            Subsystem->Whole.AddUnique(this);
-        }
+
+        ID = Subsystem->Tree.CreateProxy(WorldBound, this);
+        ensure(ID != -1);
+
+        Subsystem->Whole.Emplace(this);
     }
     while(false);
 }
 void AManagedActor::EndPlay(const EEndPlayReason::Type EndPlayReason){
-    Material = nullptr;
     if(TObjectPtr<UStaticMeshComponent> Component = GetStaticMeshComponent(); IsValid(Component))
         Component->SetMaterial(0, nullptr);
     
@@ -114,13 +106,10 @@ void AManagedActor::EndPlay(const EEndPlayReason::Type EndPlayReason){
         if(!Subsystem)
             break;
 
-        if(CVarManagerUseBVH.GetValueOnGameThread()){
-            ensure(ID != -1);
-            Subsystem->Tree.DestroyProxy(ID);
-        }
-        else{
-            Subsystem->Whole.Remove(this);
-        }
+        ensure(ID != -1);
+        Subsystem->Tree.DestroyProxy(ID);
+
+        Subsystem->Whole.Remove(this);
     }
     while(false);
     
@@ -128,11 +117,12 @@ void AManagedActor::EndPlay(const EEndPlayReason::Type EndPlayReason){
 }
 
 
-void AManagedActor::ChangeColour(){
-    if(!IsValid(Material))
+void AManagedActor::ChangeMaterial(){
+    TObjectPtr<UStaticMeshComponent> Component = GetStaticMeshComponent();
+    if(!IsValid(Component))
         return;
-    
-    Material->SetVectorParameterValue(NameOpaque, ((FlagState & 1) == 1) ? FLinearColor::Green : FLinearColor::Red);
+
+    Component->SetMaterial(0, ((FlagState & 1) == 1) ? DetectedMaterial : NormalMaterial);
 }
 
 
@@ -160,7 +150,7 @@ void ADynamicActor::BeginPlay(){
         if(!Subsystem)
             break;
 
-        Subsystem->Dynamics.AddUnique(this);
+        Subsystem->Dynamics.Emplace(this);
     }
     while(false);
 }
@@ -184,18 +174,12 @@ void ADynamicActor::EndPlay(const EEndPlayReason::Type EndPlayReason){
 
 void ADynamicActor::Update(float DeltaSeconds){
     FVector CurPos = GetActorLocation();
-    CurPos += RandomDirection * DeltaSeconds * MOVE_SPEED;
+    CurPos += RandomDirection * DeltaSeconds * CVarDynamicSpeed.GetValueOnGameThread();
     SetActorLocation(CurPos, false, nullptr, ETeleportType::TeleportPhysics);
     CurPos = GetActorLocation();
     
     WorldBound = decltype(WorldBound)(LocalBound.Lower + CurPos, LocalBound.Upper + CurPos);    
 }
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-#undef MOVE_SPEED
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

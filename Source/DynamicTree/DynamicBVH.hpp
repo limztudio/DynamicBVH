@@ -420,6 +420,14 @@ namespace __hidden_DynamicBVH{
         bool IsLeaf()const{ return (Child1 == NodeNull<SizeType>); }
     };
 
+    template<typename SizeType>
+    union Pair{
+        struct{
+            SizeType A, B;
+        };
+        SizeType Raw[2];
+    };
+    
     template<typename InElementType, typename InAllocator, int32 N>
     class QueryStack{
     public:
@@ -1027,6 +1035,120 @@ public:
             else if(CollCheck(Node->Bound)){
                 Stack.Push(Node->Child1);
                 Stack.Push(Node->Child2);
+            }
+        }
+    }
+
+public:
+    template<typename COLLCHECK, typename FUNC>
+    void DebugQuery(COLLCHECK&& CollCheck, FUNC&& Callback){
+        __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Root, 0 });
+
+        while(Stack.GetCount() > 0){
+            __hidden_DynamicBVH::Pair<SizeType> NodeID = Stack.Pop();
+            if(NodeID.A == __hidden_DynamicBVH::NodeNull<SizeType>)
+                continue;
+
+            NodeType* Node = Nodes + NodeID.A;
+
+            if(Node->IsLeaf()){
+                ElementType* Exist = Data.Find(NodeID.A);
+                if(Exist){
+                    if(CollCheck(Node->Bound))
+                        Callback(NodeID.A, *Exist, NodeID.B + 1);
+                }
+                else
+                    ensure(Exist != nullptr);
+            }
+            else if(CollCheck(Node->Bound)){
+                Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child1, NodeID.B + 1 });
+                Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child2, NodeID.B + 1 });
+            }
+        }
+    }
+    template<typename COLLCHECK, typename FUNC>
+    void DebugQueryConst(COLLCHECK&& CollCheck, FUNC&& Callback)const{
+        __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Root, 0 });
+
+        while(Stack.GetCount() > 0){
+            __hidden_DynamicBVH::Pair<SizeType> NodeID = Stack.Pop();
+            if(NodeID.A == __hidden_DynamicBVH::NodeNull<SizeType>)
+                continue;
+
+            const NodeType* Node = Nodes + NodeID.A;
+
+            if(Node->IsLeaf()){
+                const ElementType* Exist = Data.Find(NodeID.A);
+                if(Exist){
+                    if(CollCheck(Node->Bound))
+                        Callback(NodeID.A, *Exist, NodeID.B + 1);
+                }
+                else
+                    ensure(Exist != nullptr);
+            }
+            else if(CollCheck(Node->Bound)){
+                Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child1, NodeID.B + 1 });
+                Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child2, NodeID.B + 1 });
+            }
+        }
+    }
+    template<typename COLLCHECK, typename FUNC>
+    void BreakableDebugQuery(COLLCHECK&& CollCheck, FUNC&& Callback){
+        __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Root, 0 });
+
+        while(Stack.GetCount() > 0){
+            __hidden_DynamicBVH::Pair<SizeType> NodeID = Stack.Pop();
+            if(NodeID.A == __hidden_DynamicBVH::NodeNull<SizeType>)
+                continue;
+
+            NodeType* Node = Nodes + NodeID.A;
+
+            if(Node->IsLeaf()){
+                ElementType* Exist = Data.Find(NodeID.A);
+                if(Exist){
+                    if(CollCheck(Node->Bound)){
+                        if(!Callback(NodeID.A, *Exist, NodeID.B + 1))
+                            return;
+                    }
+                }
+                else
+                    ensure(Exist != nullptr);
+            }
+            else if(CollCheck(Node->Bound)){
+                Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child1, NodeID.B + 1 });
+                Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child2, NodeID.B + 1 });
+            }
+        }
+    }
+    template<typename COLLCHECK, typename FUNC>
+    void BreakableDebugQueryConst(COLLCHECK&& CollCheck, FUNC&& Callback)const{
+        __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Root, 0 });
+
+        while(Stack.GetCount() > 0){
+            __hidden_DynamicBVH::Pair<SizeType> NodeID = Stack.Pop();
+            if(NodeID.A == __hidden_DynamicBVH::NodeNull<SizeType>)
+                continue;
+
+            const NodeType* Node = Nodes + NodeID.A;
+
+            if(Node->IsLeaf()){
+                const ElementType* Exist = Data.Find(NodeID.A);
+                if(Exist){
+                    if(CollCheck(Node->Bound)){
+                        if(!Callback(NodeID.A, *Exist, NodeID.B + 1))
+                            return;
+                    }
+                }
+                else
+                    ensure(Exist != nullptr);
+            }
+            else if(CollCheck(Node->Bound)){
+                Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child1, NodeID.B + 1 });
+                Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child2, NodeID.B + 1 });
             }
         }
     }

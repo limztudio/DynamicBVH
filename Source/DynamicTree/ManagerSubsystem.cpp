@@ -2,6 +2,7 @@
 
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -14,19 +15,35 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST) || USE_LOGGING_IN_SHIPPING
+#define LEAVE_STAT
+#endif
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 TAutoConsoleVariable<float> CVarManagerDetectRadius(
     TEXT("manager.radius"),
-    100.f,
+    50000.f,
     TEXT("Detect distance from view location"),
     ECVF_Default
 );
-
 TAutoConsoleVariable<bool> CVarManagerUseBVH(
     TEXT("manager.usebvh"),
     true,
     TEXT("Use dynamic tree for managing actors"),
     ECVF_Default
 );
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+#ifdef LEAVE_STAT
+static const FName NameLogAvg(TEXT("AvgSearch"));
+static const FName NameLogMax(TEXT("MaxSearch"));
+#endif
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -248,38 +265,66 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             Actor->ClearFlag();
         }
     }
-
-    for(TWeakObjectPtr<ADynamicActor>& Actor : Dynamics){
-        if(!Actor.IsValid())
-            continue;
-
-        Actor->Update(DeltaSeconds);
-    }
+    
     if(CVarManagerUseBVH.GetValueOnGameThread()){
         for(TWeakObjectPtr<ADynamicActor>& Actor : Dynamics){
             if(!Actor.IsValid())
                 continue;
 
+            Actor->Update(DeltaSeconds);
             Tree.MoveProxy(Actor->GetID(), Actor->GetWorldBound());
         }
+    }
+    else{
+        for(TWeakObjectPtr<ADynamicActor>& Actor : Dynamics){
+            if(!Actor.IsValid())
+                continue;
+
+            Actor->Update(DeltaSeconds);
+        }    
     }
 
     if(bHaValidViewLocation){
         const float DetectRadius = CVarManagerDetectRadius.GetValueOnGameThread();
+
+#ifdef LEAVE_STAT
+        int32 MaxSearchCount = 0;
+        int32 AvgSearchCount = 0;
+        int32 FrameCount = 0;
+#endif
         
         if(CVarManagerUseBVH.GetValueOnGameThread()){
-            decltype(ViewLocation)* ViewLocationPtr = &ViewLocation;
-            
+#ifdef LEAVE_STAT
+            Tree.DebugQuery(
+#else
             Tree.Query(
-                [DetectRadius, ViewLocationPtr](const TBVHBound<double>& CurBound){
+#endif
+                [DetectRadius, &ViewLocation](const TBVHBound<double>& CurBound){
                     return IntersectSphereAndAABB(
-                        VectorLoadAligned(ViewLocationPtr),
+                        VectorLoadAligned(&ViewLocation),
                         VectorSetDouble1(DetectRadius),
                         VectorLoadAligned(&CurBound.Lower),
                         VectorLoadAligned(&CurBound.Upper)
                         );
                 },
-                [](int32, TWeakObjectPtr<AManagedActor>& Actor){
+                [
+#ifdef LEAVE_STAT
+                    &MaxSearchCount
+                    , &AvgSearchCount
+                    , &FrameCount
+#endif
+                    ](
+                        int32
+                        , TWeakObjectPtr<AManagedActor>& Actor
+#ifdef LEAVE_STAT
+                        , int32 Depth
+#endif
+                        ){
+#ifdef LEAVE_STAT
+                    MaxSearchCount = FMath::Max(MaxSearchCount, Depth);
+                    AvgSearchCount += Depth;
+                    ++FrameCount;
+#endif   
                     if(!Actor.IsValid())
                         return;
 
@@ -288,12 +333,18 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             );
         }
         else{
+#ifdef LEAVE_STAT
+            int32 SearchCount = 0;
+#endif
             for(TWeakObjectPtr<AManagedActor>& Actor : Whole){
+#ifdef LEAVE_STAT
+                ++SearchCount;
+#endif
                 if(!Actor.IsValid())
                     continue;
 
                 const auto& CurBound = Actor->GetWorldBound();
-                if(IntersectSphereAndAABB(
+                if(!IntersectSphereAndAABB(
                     VectorLoadAligned(&ViewLocation),
                     VectorSetDouble1(DetectRadius),
                     VectorLoadAligned(&CurBound.Lower),
@@ -301,9 +352,26 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
                 ))
                     continue;
 
+#ifdef LEAVE_STAT
+                MaxSearchCount = FMath::Max(MaxSearchCount, SearchCount);
+                AvgSearchCount += SearchCount;
+                ++FrameCount;
+#endif
+
                 Actor->SetFlag(1);
             }
         }
+
+#ifdef LEAVE_STAT
+        {
+            float AvgSearchCountF = AvgSearchCount;
+            if(FrameCount > 0)
+                AvgSearchCountF /= FrameCount;
+
+            UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Avg. searching count: %f"), AvgSearchCountF), true, false, FLinearColor::Blue, 2.f, NameLogAvg);
+            UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Max. searching count: %d"), MaxSearchCount), true, false, FLinearColor::Yellow, 2.f, NameLogMax);
+        }
+#endif
     }
 
     if(CVarManagerUseBVH.GetValueOnGameThread()){
@@ -312,7 +380,7 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             if(!Actor.IsValid())
                 continue;
 
-            Actor->ChangeColour();
+            Actor->ChangeMaterial();
         }
     }
     else{
@@ -320,10 +388,18 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             if(!Actor.IsValid())
                 continue;
 
-            Actor->ChangeColour();
+            Actor->ChangeMaterial();
         }
     }
 }
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+#ifdef LEAVE_STAT
+#undef LEAVE_STAT
+#endif
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

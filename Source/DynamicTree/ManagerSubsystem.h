@@ -46,8 +46,8 @@ public:
 private:
     TDynamicBVH<TWeakObjectPtr<AManagedActor>> Tree;
 
-    TArray<TWeakObjectPtr<AManagedActor>> Whole;
-    TArray<TWeakObjectPtr<ADynamicActor>> Dynamics;
+    TSet<TWeakObjectPtr<AManagedActor>> Whole;
+    TSet<TWeakObjectPtr<ADynamicActor>> Dynamics;
 
 
 public:

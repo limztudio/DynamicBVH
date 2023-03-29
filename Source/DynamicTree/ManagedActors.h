@@ -67,6 +67,10 @@ public:
 
 public:
     void Update(float DeltaSeconds);
+
+
+private:
+    FVector RandomDirection;
 };
 
 

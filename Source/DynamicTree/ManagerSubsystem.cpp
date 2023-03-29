@@ -16,7 +16,7 @@
 
 TAutoConsoleVariable<float> CVarManagerDetectRadius(
     TEXT("manager.radius"),
-    1000.f,
+    100.f,
     TEXT("Detect distance from view location"),
     ECVF_Default
 );

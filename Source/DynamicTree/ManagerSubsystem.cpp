@@ -318,22 +318,11 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
     WholeTimer[0] = std::chrono::steady_clock::now();
 #endif
 
-    if(CVarManagerUseBVH.GetValueOnGameThread()){
-        for(auto& Wrap : Tree){
-            auto& Actor = Wrap.Get<1>();
-            if(!Actor.IsValid())
-                continue;
+    for(auto& Actor : Whole){
+        if(!Actor.IsValid())
+            continue;
 
-            Actor->ClearFlag();
-        }
-    }
-    else{
-        for(auto& Actor : Whole){
-            if(!Actor.IsValid())
-                continue;
-
-            Actor->ClearFlag();
-        }
+        Actor->ClearFlag();
     }
 
 #ifdef LEAVE_STAT
@@ -500,12 +489,12 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
 #endif
 
 #ifdef LEAVE_STAT
-    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Dynamic update time taken: %lfms"), LocalTimeTaken[0].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken0);
-    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Sphere intersection time taken: %lfms"), LocalTimeTaken[1].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken1);
-    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Frustum intersection time taken: %lfms"), LocalTimeTaken[2].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken2);
+    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Dynamic update time taken: %lf ms"), LocalTimeTaken[0].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken0);
+    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Sphere intersection time taken: %lf ms"), LocalTimeTaken[1].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken1);
+    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Frustum intersection time taken: %lf ms"), LocalTimeTaken[2].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken2);
     
     WholeTimer[1] = std::chrono::steady_clock::now();
-    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Total time taken: %lfms"), std::chrono::duration<double, std::chrono::seconds::period>(WholeTimer[1] - WholeTimer[0]).count() * 1000), true, false, FLinearColor::White, 1.f, NameLogWholeTimeTaken);
+    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Total time taken: %lf ms"), std::chrono::duration<double, std::chrono::seconds::period>(WholeTimer[1] - WholeTimer[0]).count() * 1000), true, false, FLinearColor::White, 1.f, NameLogWholeTimeTaken);
 #endif
 }
 

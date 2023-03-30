@@ -5,9 +5,15 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+TAutoConsoleVariable<float> CVarDynamicMoveRange(
+    TEXT("dynamic.range"),
+    0.01f,
+    TEXT("Dynamic actor move range"),
+    ECVF_Default
+);
 TAutoConsoleVariable<float> CVarDynamicSpeed(
     TEXT("dynamic.speed"),
-    1000.f,
+    0.005f,
     TEXT("Dynamic actor move speed"),
     ECVF_Default
 );
@@ -133,12 +139,10 @@ void ADynamicActor::BeginPlay(){
     Super::BeginPlay();
 
     {
-        const auto Rand = FastRandomF3();
+        const FVector Extents = (LocalBound.Upper - LocalBound.Lower) * 0.5;
         
-        RandomDirection.X = Rand.X;
-        RandomDirection.Y = Rand.Y;
-        RandomDirection.Z = Rand.Z;
-        RandomDirection = RandomDirection.GetSafeNormal();
+        Radius = static_cast<decltype(Radius)>((FastRandomF() + 1.f) * FMath::Max3(Extents.X, Extents.Y, Extents.Z));
+        Mover = FastRandomF() * UE_PI;
     }
     
     do{
@@ -173,12 +177,22 @@ void ADynamicActor::EndPlay(const EEndPlayReason::Type EndPlayReason){
 
 
 void ADynamicActor::Update(float DeltaSeconds){
+    Mover += DeltaSeconds * UE_PI * CVarDynamicSpeed.GetValueOnGameThread();
+    Mover = FMath::Fmod(Mover, 2 * UE_PI);
+    
+    float SinVal, CosVal;
+    FMath::SinCos(&SinVal, &CosVal, Mover);
+    const float Range = CVarDynamicMoveRange.GetValueOnGameThread() * Radius;
+    SinVal *= Range;
+    CosVal *= Range;
+    
     FVector CurPos = GetActorLocation();
-    CurPos += RandomDirection * DeltaSeconds * CVarDynamicSpeed.GetValueOnGameThread();
+    CurPos.X += CosVal;
+    CurPos.Y += SinVal;
     SetActorLocation(CurPos, false, nullptr, ETeleportType::TeleportPhysics);
     CurPos = GetActorLocation();
     
-    WorldBound = decltype(WorldBound)(LocalBound.Lower + CurPos, LocalBound.Upper + CurPos);    
+    WorldBound = decltype(WorldBound)(LocalBound.Lower + CurPos, LocalBound.Upper + CurPos);
 }
 
 

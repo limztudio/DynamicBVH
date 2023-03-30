@@ -73,7 +73,8 @@ public:
 
 
 private:
-    FVector RandomDirection;
+    float Radius;
+    float Mover;
 };
 
 

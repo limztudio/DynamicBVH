@@ -437,11 +437,11 @@ namespace __hidden_DynamicBVH{
 
 
     public:
-        QueryStack(){
-            Stack = Array;
-            Count = 0;
-            Capacity = static_cast<SizeType>(N);
-        }
+        QueryStack()
+            : Stack(Array)
+            , Count(0)
+            , Capacity(static_cast<SizeType>(N))
+        {}
         ~QueryStack(){
             if(Stack != Array){
                 Allocator::Deallocate(Stack);
@@ -468,6 +468,15 @@ namespace __hidden_DynamicBVH{
             check(Count > 0);
             --Count;
             return Stack[Count];
+        }
+
+        void Reset(){
+            if(Stack != Array){
+                Allocator::Deallocate(Stack);
+                Stack = Array;
+            }
+            Count = 0;
+            Capacity = static_cast<SizeType>(N);
         }
 
     public:
@@ -651,7 +660,7 @@ struct TBVHAllocator{
     static void Deallocate(void* P){ FMemory::Free(P); }
 };
 
-template<typename InElementType, typename InAllocator = TBVHAllocator, typename BoundType = TBVHBound<typename InAllocator::FloatType>, int32 QueryStackCapacity = 1 << 11>
+template<typename InElementType, typename InAllocator = TBVHAllocator, typename BoundType = TBVHBound<typename InAllocator::FloatType>, int32 QueryStackCapacity = 1 << 7>
 class TDynamicBVH{
 public:
     typedef typename InAllocator::SizeType SizeType;
@@ -928,7 +937,8 @@ public:
 public:
     template<typename COLLCHECK, typename FUNC>
     void Query(COLLCHECK&& CollCheck, FUNC&& Callback){
-        __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;
+        static thread_local __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;
+        Stack.Reset();
         Stack.Push(Root);
 
         while(Stack.GetCount() > 0){
@@ -955,7 +965,8 @@ public:
     }
     template<typename COLLCHECK, typename FUNC>
     void QueryConst(COLLCHECK&& CollCheck, FUNC&& Callback)const{
-        __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;
+        static thread_local __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;
+        Stack.Reset();
         Stack.Push(Root);
 
         while(Stack.GetCount() > 0){
@@ -982,7 +993,8 @@ public:
     }
     template<typename COLLCHECK, typename FUNC>
     void BreakableQuery(COLLCHECK&& CollCheck, FUNC&& Callback){
-        __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;
+        static thread_local __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;
+        Stack.Reset();
         Stack.Push(Root);
 
         while(Stack.GetCount() > 0){
@@ -1011,7 +1023,8 @@ public:
     }
     template<typename COLLCHECK, typename FUNC>
     void BreakableQueryConst(COLLCHECK&& CollCheck, FUNC&& Callback)const{
-        __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;
+        static thread_local __hidden_DynamicBVH::QueryStack<SizeType, Allocator, QueryStackCapacity> Stack;
+        Stack.Reset();
         Stack.Push(Root);
 
         while(Stack.GetCount() > 0){
@@ -1042,7 +1055,8 @@ public:
 public:
     template<typename COLLCHECK, typename FUNC>
     void DebugQuery(COLLCHECK&& CollCheck, FUNC&& Callback){
-        __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        static thread_local __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        Stack.Reset();
         Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Root, 0 });
 
         while(Stack.GetCount() > 0){
@@ -1069,7 +1083,8 @@ public:
     }
     template<typename COLLCHECK, typename FUNC>
     void DebugQueryConst(COLLCHECK&& CollCheck, FUNC&& Callback)const{
-        __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        static thread_local __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        Stack.Reset();
         Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Root, 0 });
 
         while(Stack.GetCount() > 0){
@@ -1096,7 +1111,8 @@ public:
     }
     template<typename COLLCHECK, typename FUNC>
     void BreakableDebugQuery(COLLCHECK&& CollCheck, FUNC&& Callback){
-        __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        static thread_local __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        Stack.Reset();
         Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Root, 0 });
 
         while(Stack.GetCount() > 0){
@@ -1125,7 +1141,8 @@ public:
     }
     template<typename COLLCHECK, typename FUNC>
     void BreakableDebugQueryConst(COLLCHECK&& CollCheck, FUNC&& Callback)const{
-        __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        static thread_local __hidden_DynamicBVH::QueryStack<__hidden_DynamicBVH::Pair<SizeType>, Allocator, QueryStackCapacity> Stack;
+        Stack.Reset();
         Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Root, 0 });
 
         while(Stack.GetCount() > 0){
@@ -1697,7 +1714,7 @@ private:
 };
 
 
-template<typename InElementType, typename InAllocator = TBVHAllocator, typename BoundType = TBVHBound2D<typename InAllocator::FloatType>, int32 QueryStackCapacity = 1 << 11>
+template<typename InElementType, typename InAllocator = TBVHAllocator, typename BoundType = TBVHBound2D<typename InAllocator::FloatType>, int32 QueryStackCapacity = 1 << 7>
 using TDynamicBVH2D = TDynamicBVH<InElementType, BoundType, InAllocator, QueryStackCapacity>;
 
 

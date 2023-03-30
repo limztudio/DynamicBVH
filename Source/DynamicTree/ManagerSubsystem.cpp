@@ -23,6 +23,14 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+#ifdef LEAVE_STAT
+#include <chrono>
+#endif
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 TAutoConsoleVariable<float> CVarManagerDetectRadius(
     TEXT("manager.radius"),
     50000.f,
@@ -43,13 +51,17 @@ TAutoConsoleVariable<bool> CVarManagerUseBVH(
 #ifdef LEAVE_STAT
 static const FName NameLogAvg(TEXT("AvgSearch"));
 static const FName NameLogMax(TEXT("MaxSearch"));
+static const FName NameLogWholeTimeTaken(TEXT("WholeTimeTaken"));
+static const FName NameLogLocalTimeTaken0(TEXT("LocalTimeTaken0"));
+static const FName NameLogLocalTimeTaken1(TEXT("LocalTimeTaken1"));
+static const FName NameLogLocalTimeTaken2(TEXT("LocalTimeTaken2"));
 #endif
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-static bool IntersectSphereAndAABB(VectorRegister XMMSphereCentre, VectorRegister XMMSSphereRadius, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
+static FORCEINLINE bool IntersectSphereWithAABB(VectorRegister XMMSphereCentre, VectorRegister XMMSSphereRadius, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
     VectorRegister XMMTmp;
 
     VectorRegister XMMClosest;
@@ -68,6 +80,49 @@ static bool IntersectSphereAndAABB(VectorRegister XMMSphereCentre, VectorRegiste
 
     XMMTmp = VectorCompareLT(XMMTmp, XMMSSphereRadius);
     return (VectorMaskBits(XMMTmp) & 0x01) != 0;
+}
+
+static FORCEINLINE bool IntersectFrustumWithAABB(const FConvexVolume::FPermutedPlaneArray& PermutedPlanes, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
+    VectorRegister XMMBoxOrigin = VectorAdd(XMMBoxUpper, XMMBoxLower);
+    XMMBoxOrigin = VectorMultiply(XMMBoxOrigin, GlobalVectorConstants::DoubleOneHalf);
+    VectorRegister XMMBoxExtent = VectorSubtract(XMMBoxUpper, XMMBoxOrigin);
+    
+    // Splat origin into 3 vectors
+    VectorRegister XMMOrigX = VectorReplicate(XMMBoxOrigin, 0);
+    VectorRegister XMMOrigY = VectorReplicate(XMMBoxOrigin, 1);
+    VectorRegister XMMOrigZ = VectorReplicate(XMMBoxOrigin, 2);
+    // Splat extent into 3 vectors
+    VectorRegister XMMExtentX = VectorReplicate(XMMBoxExtent, 0);
+    VectorRegister XMMExtentY = VectorReplicate(XMMBoxExtent, 1);
+    VectorRegister XMMExtentZ = VectorReplicate(XMMBoxExtent, 2);
+    // Since we are moving straight through get a pointer to the data
+    const FPlane* RESTRICT PermutedPlanePtr = (FPlane*)PermutedPlanes.GetData();
+    // Process four planes at a time until we have < 4 left
+    for(int32 Count = 0, Num = PermutedPlanes.Num(); Count < Num; Count += 4){
+        // Load 4 planes that are already all Xs, Ys, ...
+        VectorRegister XMMPlanesX = VectorLoadAligned(PermutedPlanePtr);
+        PermutedPlanePtr++;
+        VectorRegister XMMPlanesY = VectorLoadAligned(PermutedPlanePtr);
+        PermutedPlanePtr++;
+        VectorRegister XMMPlanesZ = VectorLoadAligned(PermutedPlanePtr);
+        PermutedPlanePtr++;
+        VectorRegister XMMPlanesW = VectorLoadAligned(PermutedPlanePtr);
+        PermutedPlanePtr++;
+        // Calculate the distance (x * x) + (y * y) + (z * z) - w
+        VectorRegister XMMDistX = VectorMultiply(XMMOrigX, XMMPlanesX);
+        VectorRegister XMMDistY = VectorMultiplyAdd(XMMOrigY, XMMPlanesY, XMMDistX);
+        VectorRegister XMMDistZ = VectorMultiplyAdd(XMMOrigZ, XMMPlanesZ, XMMDistY);
+        VectorRegister XMMDistance = VectorSubtract(XMMDistZ, XMMPlanesW);
+        // Now do the push out FMath::Abs(x * x) + FMath::Abs(y * y) + FMath::Abs(z * z)
+        VectorRegister XMMPushX = VectorMultiply(XMMExtentX, VectorAbs(XMMPlanesX));
+        VectorRegister XMMPushY = VectorMultiplyAdd(XMMExtentY, VectorAbs(XMMPlanesY), XMMPushX);
+        VectorRegister XMMPushOut = VectorMultiplyAdd(XMMExtentZ, VectorAbs(XMMPlanesZ), XMMPushY);
+
+        // Check for completely outside
+        if(VectorAnyGreaterThan(XMMDistance, XMMPushOut))
+            return false;
+    }
+    return true;
 }
 
 
@@ -120,8 +175,9 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
         DeltaSeconds = 0.f;
 #endif
 
-    bool bHaValidViewLocation = false;
+    bool bHasValidView = false;
     FVector4 ViewLocation;
+    FConvexVolume ViewFrustum;
 
 #if WITH_EDITOR
     if(GEditor){
@@ -162,10 +218,12 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
                 FRotator NewRotation;
                 if(const FSceneView* View = Player->CalcSceneView(&ViewFamily, NewLocation, NewRotation, Viewport)){
                     const int32 PlaneCount = View->ViewFrustum.PermutedPlanes.Num();
-                    if(!(PlaneCount % 4)){
-                        bHaValidViewLocation = true;
-                        ViewLocation = View->ViewLocation;
-                    }
+                    if((PlaneCount % 4))
+                        continue;
+                    
+                    bHasValidView = true;
+                    ViewLocation = View->ViewLocation;
+                    ViewFrustum = View->ViewFrustum;
                 }
             }
             while(false);
@@ -196,8 +254,9 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
                     if((PlaneCount % 4))
                         continue;
 
-                    bHaValidViewLocation = true;
+                    bHasValidView = true;
                     ViewLocation = View->ViewLocation;
+                    ViewFrustum = View->ViewFrustum;
                 }
                 break;
             }
@@ -237,15 +296,26 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             FRotator NewRotation;
             if(FSceneView* View = Player->CalcSceneView(&ViewFamily, NewLocation, NewRotation, Viewport)){
                 int32 PlaneCount = View->ViewFrustum.PermutedPlanes.Num();
-                if(!(PlaneCount % 4)){
-                    bHaValidViewLocation = true;
-                    ViewLocation = View->ViewLocation;
-                }
+                if((PlaneCount % 4))
+                    continue;
+                
+                bHasValidView = true;
+                ViewLocation = View->ViewLocation;
+                ViewFrustum = View->ViewFrustum;
             }
         }
         while(false);
 #if WITH_EDITOR
     }
+#endif
+
+#ifdef LEAVE_STAT
+    std::chrono::steady_clock::time_point WholeTimer[2];
+    std::chrono::steady_clock::time_point LocalTimer[2];
+
+    std::chrono::duration<double, std::chrono::seconds::period> LocalTimeTaken[3];
+
+    WholeTimer[0] = std::chrono::steady_clock::now();
 #endif
 
     if(CVarManagerUseBVH.GetValueOnGameThread()){
@@ -265,7 +335,10 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             Actor->ClearFlag();
         }
     }
-    
+
+#ifdef LEAVE_STAT
+    LocalTimer[0] = std::chrono::steady_clock::now();
+#endif
     if(CVarManagerUseBVH.GetValueOnGameThread()){
         for(TWeakObjectPtr<ADynamicActor>& Actor : Dynamics){
             if(!Actor.IsValid())
@@ -281,10 +354,14 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
                 continue;
 
             Actor->Update(DeltaSeconds);
-        }    
+        }
     }
+#ifdef LEAVE_STAT
+    LocalTimer[1] = std::chrono::steady_clock::now();
+    LocalTimeTaken[0] = LocalTimer[1] - LocalTimer[0];
+#endif
 
-    if(bHaValidViewLocation){
+    if(bHasValidView){
         const float DetectRadius = CVarManagerDetectRadius.GetValueOnGameThread();
 
 #ifdef LEAVE_STAT
@@ -292,7 +369,10 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
         int32 AvgSearchCount = 0;
         int32 FrameCount = 0;
 #endif
-        
+
+#ifdef LEAVE_STAT
+        LocalTimer[0] = std::chrono::steady_clock::now();
+#endif
         if(CVarManagerUseBVH.GetValueOnGameThread()){
 #ifdef LEAVE_STAT
             Tree.DebugQuery(
@@ -300,7 +380,7 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             Tree.Query(
 #endif
                 [DetectRadius, &ViewLocation](const TBVHBound<double>& CurBound){
-                    return IntersectSphereAndAABB(
+                    return IntersectSphereWithAABB(
                         VectorLoadAligned(&ViewLocation),
                         VectorSetDouble1(DetectRadius),
                         VectorLoadAligned(&CurBound.Lower),
@@ -344,7 +424,7 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
                     continue;
 
                 const auto& CurBound = Actor->GetWorldBound();
-                if(!IntersectSphereAndAABB(
+                if(!IntersectSphereWithAABB(
                     VectorLoadAligned(&ViewLocation),
                     VectorSetDouble1(DetectRadius),
                     VectorLoadAligned(&CurBound.Lower),
@@ -361,6 +441,10 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
                 Actor->SetFlag(1);
             }
         }
+#ifdef LEAVE_STAT
+        LocalTimer[1] = std::chrono::steady_clock::now();
+        LocalTimeTaken[1] = LocalTimer[1] - LocalTimer[0];
+#endif
 
 #ifdef LEAVE_STAT
         {
@@ -368,29 +452,61 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             if(FrameCount > 0)
                 AvgSearchCountF /= FrameCount;
 
-            UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Avg. searching count: %f"), AvgSearchCountF), true, false, FLinearColor::Blue, 2.f, NameLogAvg);
-            UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Max. searching count: %d"), MaxSearchCount), true, false, FLinearColor::Yellow, 2.f, NameLogMax);
+            UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Avg. searching count: %f"), AvgSearchCountF), true, false, FLinearColor::Blue, 1.f, NameLogAvg);
+            UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Max. searching count: %d"), MaxSearchCount), true, false, FLinearColor::Yellow, 1.f, NameLogMax);
         }
 #endif
     }
 
+#ifdef LEAVE_STAT
+    LocalTimer[0] = std::chrono::steady_clock::now();
+#endif
     if(CVarManagerUseBVH.GetValueOnGameThread()){
-        for(auto& Wrap : Tree){
-            auto& Actor = Wrap.Get<1>();
-            if(!Actor.IsValid())
-                continue;
-
-            Actor->ChangeMaterial();
-        }
+        Tree.Query(
+            [&ViewFrustum](const TBVHBound<double>& CurBound){
+                return IntersectFrustumWithAABB(
+                    ViewFrustum.PermutedPlanes,
+                    VectorLoadAligned(&CurBound.Lower),
+                    VectorLoadAligned(&CurBound.Upper)
+                    );
+            },
+            [](int32, TWeakObjectPtr<AManagedActor>& Actor){
+                if(!Actor.IsValid())
+                    return;
+                
+                Actor->ChangeMaterial();
+            }
+        );
     }
     else{
         for(auto& Actor : Whole){
             if(!Actor.IsValid())
                 continue;
 
+            const auto& CurBound = Actor->GetWorldBound();
+            if(!IntersectFrustumWithAABB(
+                ViewFrustum.PermutedPlanes,
+                VectorLoadAligned(&CurBound.Lower),
+                VectorLoadAligned(&CurBound.Upper)
+            ))
+                continue;
+
             Actor->ChangeMaterial();
         }
     }
+#ifdef LEAVE_STAT
+    LocalTimer[1] = std::chrono::steady_clock::now();
+    LocalTimeTaken[2] = LocalTimer[1] - LocalTimer[0];
+#endif
+
+#ifdef LEAVE_STAT
+    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Dynamic update time taken: %lfms"), LocalTimeTaken[0].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken0);
+    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Sphere intersection time taken: %lfms"), LocalTimeTaken[1].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken1);
+    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Frustum intersection time taken: %lfms"), LocalTimeTaken[2].count() * 1000), true, false, FLinearColor::White, 1.f, NameLogLocalTimeTaken2);
+    
+    WholeTimer[1] = std::chrono::steady_clock::now();
+    UKismetSystemLibrary::PrintString(nullptr, FString::Printf(TEXT("Total time taken: %lfms"), std::chrono::duration<double, std::chrono::seconds::period>(WholeTimer[1] - WholeTimer[0]).count() * 1000), true, false, FLinearColor::White, 1.f, NameLogWholeTimeTaken);
+#endif
 }
 
 

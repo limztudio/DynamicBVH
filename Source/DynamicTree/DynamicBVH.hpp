@@ -400,8 +400,10 @@ namespace __hidden_DynamicBVH{
     template<typename FloatType>
     inline AABB<FloatType> AABBError(){ return AABB<FloatType>{ UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>), UE::Math::TVector4<FloatType>(-FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>, -FloatMax<FloatType>) }; }
 
-    template<typename SizeType, typename BoundType>
+    template<typename T, typename SizeType, typename BoundType>
     struct alignas(16) Node{
+        uint8 Data[sizeof(T)];
+        
         union{
             SizeType Parent;
             SizeType Next;
@@ -419,6 +421,70 @@ namespace __hidden_DynamicBVH{
 
         bool IsLeaf()const{ return (Child1 == NodeNull<SizeType>); }
     };
+    template<typename T, typename SizeType, typename BoundType, typename... ARGS>
+    static FORCEINLINE void ConstructNodeData(Node<T, SizeType, BoundType>& Lhs, ARGS&&... Args){
+        T& LhsDataRef = *reinterpret_cast<T*>(Lhs.Data);
+
+        new(LhsDataRef) T(Forward<ARGS>(Args)...);
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE void ConstructNodeData(Node<T, SizeType, BoundType>& Lhs, const Node<T, SizeType, BoundType>& Rhs){
+        T& LhsDataRef = *reinterpret_cast<T*>(Lhs.Data);
+        const T& RhsDataRef = *reinterpret_cast<const T*>(Rhs.Data);
+
+        ConstructNodeData(Lhs, RhsDataRef);
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE void ConstructNodeData(Node<T, SizeType, BoundType>& Lhs, Node<T, SizeType, BoundType>&& Rhs){
+        T& LhsDataRef = *reinterpret_cast<T*>(Lhs.Data);
+        T& RhsDataRef = *reinterpret_cast<T*>(Rhs.Data);
+
+        ConstructNodeData(Lhs, MoveTemp(RhsDataRef));
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE void CopyNodeData(Node<T, SizeType, BoundType>& Lhs, const Node<T, SizeType, BoundType>& Rhs){
+        T& LhsDataRef = *reinterpret_cast<T*>(Lhs.Data);
+        const T& RhsDataRef = *reinterpret_cast<const T*>(Rhs.Data);
+
+        LhsDataRef = RhsDataRef;
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE void CopyNodeData(Node<T, SizeType, BoundType>& Lhs, Node<T, SizeType, BoundType>&& Rhs){
+        T& LhsDataRef = *reinterpret_cast<T*>(Lhs.Data);
+        T& RhsDataRef = *reinterpret_cast<T*>(Rhs.Data);
+
+        LhsDataRef = MoveTemp(RhsDataRef);
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE void CopyNodeData(Node<T, SizeType, BoundType>& Lhs, const T& Rhs){
+        T& LhsDataRef = *reinterpret_cast<T*>(Lhs.Data);
+
+        LhsDataRef = Rhs;
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE void CopyNodeData(Node<T, SizeType, BoundType>& Lhs, T&& Rhs){
+        T& LhsDataRef = *reinterpret_cast<T*>(Lhs.Data);
+
+        LhsDataRef = MoveTemp(Rhs);
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE void DestructNodeData(Node<T, SizeType, BoundType>& Node){
+        T& NodeDataRef = *reinterpret_cast<T*>(Node.Data);
+
+        NodeDataRef.~T();
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE T& ReturnNodeData(Node<T, SizeType, BoundType>& Node){
+        T& NodeDataRef = *reinterpret_cast<T*>(Node.Data);
+
+        return NodeDataRef;
+    }
+    template<typename T, typename SizeType, typename BoundType>
+    static FORCEINLINE const T& ReturnNodeData(const Node<T, SizeType, BoundType>& Node){
+        const T& NodeDataRef = *reinterpret_cast<const T*>(Node.Data);
+
+        return NodeDataRef;
+    }
 
     template<typename SizeType>
     union Pair{
@@ -652,8 +718,9 @@ const TBVHBound<SizeType> TBVHBound<SizeType>::Error = __hidden_DynamicBVH::AABB
 
 
 struct TBVHAllocator{
-    typedef FDefaultSetAllocator DataAllocator;
+    typedef TInlineAllocator<1 << 12> DataAllocator;
     typedef int32 SizeType;
+    typedef int32 DiffType;
     typedef double FloatType;
 
     static void* Allocate(SizeType Size, SizeType Align){ return FMemory::Malloc(Size, Align); }
@@ -664,11 +731,112 @@ template<typename InElementType, typename InAllocator = TBVHAllocator, typename 
 class TDynamicBVH{
 public:
     typedef typename InAllocator::SizeType SizeType;
+    typedef typename InAllocator::DiffType DiffType;
     typedef typename InAllocator::FloatType FloatType;
     typedef InElementType ElementType;
-    typedef __hidden_DynamicBVH::Node<SizeType, BoundType> NodeType;
-    typedef TMap<SizeType, ElementType, typename InAllocator::DataAllocator> DataContainer;
+    typedef __hidden_DynamicBVH::Node<ElementType, SizeType, BoundType> NodeType;
     typedef InAllocator Allocator;
+
+
+public:
+    template<bool bConst>
+    class TIterator{
+    public:
+        typedef typename TChooseClass<bConst, const ElementType, ElementType>::Result ValueType;
+
+        
+    public:
+        TIterator(TDynamicBVH& _BVH, DiffType Init = 0)
+            : BVH(_BVH)
+            , Index(Init)
+        {
+            for(; Index < static_cast<DiffType>(BVH.NodeCapacity); ++Index){
+                if(BVH.Nodes[Index].IsLeaf())
+                    break;
+            }
+        }
+
+    public:
+        TIterator& operator++(){
+            for(; Index < static_cast<DiffType>(BVH.NodeCapacity); ++Index){
+                if(BVH.Nodes[Index].IsLeaf())
+                    break;
+            }
+            return *this;
+        }
+        TIterator operator++(int){
+            TIterator Tmp(BVH);
+            for(; Index < static_cast<DiffType>(BVH.NodeCapacity); ++Index){
+                if(BVH.Nodes[Index].IsLeaf())
+                    break;
+            }
+            return MoveTemp(Tmp);
+        }
+
+        TIterator& operator--(){
+            for(; Index >= 0; --Index){
+                if(BVH.Nodes[Index].IsLeaf())
+                    break;
+            }
+            return *this;
+        }
+        TIterator operator--(int){
+            TIterator Tmp(BVH);
+            for(; Index >= 0; --Index){
+                if(BVH.Nodes[Index].IsLeaf())
+                    break;
+            }
+            return MoveTemp(Tmp);
+        }
+
+    public:
+        FORCEINLINE bool operator==(const TIterator& Rhs)const{
+            if((&BVH) != (&Rhs.BVH))
+                return false;
+            if(Index != Rhs.Index)
+                return false;
+            return true;
+        }
+        FORCEINLINE bool operator!=(const TIterator& Rhs)const{
+            if((&BVH) != (&Rhs.BVH))
+                return true;
+            if(Index != Rhs.Index)
+                return true;
+            return false;
+        }
+
+    public:
+        FORCEINLINE explicit operator bool()const{ return IsValid(); }
+        FORCEINLINE bool operator !()const{ return !IsValid(); }
+        FORCEINLINE bool IsValid()const{
+            if(Index < 0)
+                return false;
+            if(Index >= static_cast<DiffType>(BVH.NodeCapacity))
+                return false;
+            if(!BVH.Nodes[Index].IsLeaf())
+                return false;
+            return true;
+        }
+
+    public:
+        FORCEINLINE TTuple<SizeType, ValueType&> operator*()const{
+            check(IsValid());
+            return TTuple<SizeType, ValueType&>(static_cast<SizeType>(Index), __hidden_DynamicBVH::ReturnNodeData(BVH.Nodes[Index]));
+        }
+        FORCEINLINE SizeType Key()const{
+            check(IsValid());
+            return static_cast<SizeType>(Index);
+        }
+        FORCEINLINE ValueType& Value()const{
+            check(IsValid());
+            return __hidden_DynamicBVH::ReturnNodeData(BVH.Nodes[Index]);
+        }
+
+        
+    private:
+        TDynamicBVH& BVH;
+        DiffType Index;
+    };
 
 
 public:
@@ -690,8 +858,6 @@ public:
         FreeList = 0;
 
         InsertionCount = 0;
-
-        Data.Reserve(InitNodeCapacity);
     }
     TDynamicBVH(const TDynamicBVH& Other){
         Root = Other.Root;
@@ -711,12 +877,13 @@ public:
             __hidden_DynamicBVH::CopyAABB(&Nodes[i].Bound, &Other.Nodes[i].Bound);
 
             Nodes[i].bMoved = Other.Nodes[i].bMoved;
+
+            if(Other.Nodes[i].IsLeaf())
+                __hidden_DynamicBVH::ConstructNodeData(Nodes[i], Other.Nodes[i]);
         }
 
         FreeList = Other.FreeList;
         InsertionCount = Other.InsertionCount;
-
-        Data = Other.Data;
     }
     TDynamicBVH(TDynamicBVH&& Other)noexcept{
         Root = Other.Root;
@@ -736,12 +903,15 @@ public:
 
         InsertionCount = Other.InsertionCount;
         Other.InsertionCount = 0;
-
-        Data = MoveTemp(Other.Data);
     }
     ~TDynamicBVH(){
-        if(Nodes)
+        if(Nodes){
+            for(SizeType i = 0; i < NodeCapacity; ++i){
+                if(Nodes[i].IsLeaf())
+                    __hidden_DynamicBVH::DestructNodeData(Nodes[i]);
+            }
             Allocator::Deallocate(Nodes);
+        }
     }
 
 public:
@@ -751,6 +921,10 @@ public:
         // it needs optimization
         if(NodeCapacity != Other.NodeCapacity){
             if(Nodes){
+                for(SizeType i = 0; i < NodeCapacity; ++i){
+                    if(Nodes[i].IsLeaf())
+                        __hidden_DynamicBVH::DestructNodeData(Nodes[i]);
+                }
                 Allocator::Deallocate(Nodes);
                 Nodes = nullptr;
             }
@@ -771,18 +945,24 @@ public:
             __hidden_DynamicBVH::CopyAABB(&Nodes[i].Bound, &Other.Nodes[i].Bound);
 
             Nodes[i].bMoved = Other.Nodes[i].bMoved;
+
+            if(Other.Nodes[i].IsLeaf())
+                __hidden_DynamicBVH::ConstructNodeData(Nodes[i], Other.Nodes[i]);
         }
 
         FreeList = Other.FreeList;
         InsertionCount = Other.InsertionCount;
 
-        Data = Other.Data;
-
         return *this;
     }
     TDynamicBVH& operator=(TDynamicBVH&& Other)noexcept{
-        if(Nodes)
+        if(Nodes){
+            for(SizeType i = 0; i < NodeCapacity; ++i){
+                if(Nodes[i].IsLeaf())
+                    __hidden_DynamicBVH::DestructNodeData(Nodes[i]);
+            }
             Allocator::Deallocate(Nodes);
+        }
 
         Root = Other.Root;
         Other.Root = __hidden_DynamicBVH::NodeNull<SizeType>;
@@ -802,8 +982,6 @@ public:
         InsertionCount = Other.InsertionCount;
         Other.InsertionCount = 0;
 
-        Data = MoveTemp(Other.Data);
-
         return *this;
     }
 
@@ -816,7 +994,13 @@ public:
             NodeCapacity = 256;
         NodeCount = 0;
 
-        if(!Nodes)
+        if(Nodes){
+            for(SizeType i = 0; i < NodeCapacity; ++i){
+                if(Nodes[i].IsLeaf())
+                    __hidden_DynamicBVH::DestructNodeData(Nodes[i]);
+            }
+        }
+        else
             Nodes = reinterpret_cast<NodeType*>(Allocator::Allocate(NodeCapacity * sizeof(NodeType), 16));
         FPlatformMemory::Memzero(Nodes, NodeCapacity * sizeof(NodeType));
 
@@ -829,9 +1013,6 @@ public:
         FreeList = 0;
 
         InsertionCount = 0;
-
-        Data.Reset();
-        Data.Reserve(NodeCapacity);
     }
 
 public:
@@ -843,11 +1024,7 @@ public:
         Nodes[ProxyID].Height = 0;
         Nodes[ProxyID].bMoved = true;
 
-        if(ElementType* Exist = Data.Find(ProxyID)){
-            (*Exist) = ElementType(Forward<ARGS>(Args)...);
-        }
-        else
-            Data.Emplace(ProxyID, Forward<ARGS>(Args)...);
+        __hidden_DynamicBVH::ConstructNodeData(Nodes[ProxyID], Forward<ARGS>(Args)...);
 
         InsertLeaf(ProxyID);
         return ProxyID;
@@ -856,11 +1033,9 @@ public:
         check(0 <= ProxyID && ProxyID < NodeCapacity);
         check(Nodes[ProxyID].IsLeaf());
 
+        __hidden_DynamicBVH::DestructNodeData(Nodes[ProxyID]);
+        
         RemoveLeaf(ProxyID);
-
-        if(Nodes[ProxyID].IsLeaf())
-            Data.Remove(ProxyID);
-
         FreeNode(ProxyID);
     }
 
@@ -896,13 +1071,13 @@ public:
     ElementType* GetData(SizeType ProxyID){
         check(0 <= ProxyID && ProxyID < NodeCapacity);
         if(Nodes[ProxyID].IsLeaf())
-            return Data.Find(ProxyID);
+            return &__hidden_DynamicBVH::ReturnNodeData(Nodes[ProxyID]);
         return nullptr;
     }
     const ElementType* GetData(SizeType ProxyID)const{
         check(0 <= ProxyID && ProxyID < NodeCapacity);
         if(Nodes[ProxyID].IsLeaf())
-            return Data.Find(ProxyID);
+            return &__hidden_DynamicBVH::ReturnNodeData(Nodes[ProxyID]);
         return nullptr;
     }
 
@@ -929,10 +1104,13 @@ public:
     }
 
 public:
-    typename DataContainer::TRangedForIterator begin(){ return Data.begin(); }
-    typename DataContainer::TRangedForConstIterator begin()const{ return Data.begin(); }
-    typename DataContainer::TRangedForIterator end(){ return Data.end(); }
-    typename DataContainer::TRangedForConstIterator end()const{ return Data.end(); }
+    FORCEINLINE TIterator<false> begin(){ return TIterator<false>(*this, 0); }
+    FORCEINLINE TIterator<true> begin()const{ return TIterator<true>(*this, 0); }
+    FORCEINLINE TIterator<false> end(){ return TIterator<false>(*this, static_cast<DiffType>(NodeCapacity)); }
+    FORCEINLINE TIterator<true> end()const{ return TIterator<true>(*this, static_cast<DiffType>(NodeCapacity)); }
+
+    FORCEINLINE TIterator<false> CreateIterator(){ return TIterator<false>(*this); }
+    FORCEINLINE TIterator<true> CreateConstIterator()const{ return TIterator<true>(*this); }
 
 public:
     template<typename COLLCHECK, typename FUNC>
@@ -949,13 +1127,8 @@ public:
             NodeType* Node = Nodes + NodeID;
 
             if(Node->IsLeaf()){
-                ElementType* Exist = Data.Find(NodeID);
-                if(Exist){
-                    if(CollCheck(Node->Bound))
-                        Callback(NodeID, *Exist);
-                }
-                else
-                    ensure(Exist != nullptr);
+                if(CollCheck(Node->Bound))
+                    Callback(NodeID, __hidden_DynamicBVH::ReturnNodeData(*Node));
             }
             else if(CollCheck(Node->Bound)){
                 Stack.Push(Node->Child1);
@@ -977,13 +1150,8 @@ public:
             const NodeType* Node = Nodes + NodeID;
 
             if(Node->IsLeaf()){
-                const ElementType* Exist = Data.Find(NodeID);
-                if(Exist){
-                    if(CollCheck(Node->Bound))
-                        Callback(NodeID, *Exist);
-                }
-                else
-                    ensure(Exist != nullptr);
+                if(CollCheck(Node->Bound))
+                    Callback(NodeID, __hidden_DynamicBVH::ReturnNodeData(*Node));
             }
             else if(CollCheck(Node->Bound)){
                 Stack.Push(Node->Child1);
@@ -1005,15 +1173,10 @@ public:
             NodeType* Node = Nodes + NodeID;
 
             if(Node->IsLeaf()){
-                ElementType* Exist = Data.Find(NodeID);
-                if(Exist){
-                    if(CollCheck(Node->Bound)){
-                        if(!Callback(NodeID, *Exist))
-                            return;
-                    }
+                if(CollCheck(Node->Bound)){
+                    if(!Callback(NodeID, __hidden_DynamicBVH::ReturnNodeData(*Node)))
+                        return;
                 }
-                else
-                    ensure(Exist != nullptr);
             }
             else if(CollCheck(Node->Bound)){
                 Stack.Push(Node->Child1);
@@ -1035,15 +1198,10 @@ public:
             const NodeType* Node = Nodes + NodeID;
 
             if(Node->IsLeaf()){
-                const ElementType* Exist = Data.Find(NodeID);
-                if(Exist){
-                    if(CollCheck(Node->Bound)){
-                        if(!Callback(NodeID, *Exist))
-                            return;
-                    }
+                if(CollCheck(Node->Bound)){
+                    if(!Callback(NodeID, __hidden_DynamicBVH::ReturnNodeData(*Node)))
+                        return;
                 }
-                else
-                    ensure(Exist != nullptr);
             }
             else if(CollCheck(Node->Bound)){
                 Stack.Push(Node->Child1);
@@ -1067,13 +1225,8 @@ public:
             NodeType* Node = Nodes + NodeID.A;
 
             if(Node->IsLeaf()){
-                ElementType* Exist = Data.Find(NodeID.A);
-                if(Exist){
-                    if(CollCheck(Node->Bound))
-                        Callback(NodeID.A, *Exist, NodeID.B + 1);
-                }
-                else
-                    ensure(Exist != nullptr);
+                if(CollCheck(Node->Bound))
+                    Callback(NodeID.A, __hidden_DynamicBVH::ReturnNodeData(*Node), NodeID.B + 1);
             }
             else if(CollCheck(Node->Bound)){
                 Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child1, NodeID.B + 1 });
@@ -1095,13 +1248,8 @@ public:
             const NodeType* Node = Nodes + NodeID.A;
 
             if(Node->IsLeaf()){
-                const ElementType* Exist = Data.Find(NodeID.A);
-                if(Exist){
-                    if(CollCheck(Node->Bound))
-                        Callback(NodeID.A, *Exist, NodeID.B + 1);
-                }
-                else
-                    ensure(Exist != nullptr);
+                if(CollCheck(Node->Bound))
+                    Callback(NodeID.A, __hidden_DynamicBVH::ReturnNodeData(*Node), NodeID.B + 1);
             }
             else if(CollCheck(Node->Bound)){
                 Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child1, NodeID.B + 1 });
@@ -1123,15 +1271,10 @@ public:
             NodeType* Node = Nodes + NodeID.A;
 
             if(Node->IsLeaf()){
-                ElementType* Exist = Data.Find(NodeID.A);
-                if(Exist){
-                    if(CollCheck(Node->Bound)){
-                        if(!Callback(NodeID.A, *Exist, NodeID.B + 1))
-                            return;
-                    }
+                if(CollCheck(Node->Bound)){
+                    if(!Callback(NodeID.A, __hidden_DynamicBVH::ReturnNodeData(*Node), NodeID.B + 1))
+                        return;
                 }
-                else
-                    ensure(Exist != nullptr);
             }
             else if(CollCheck(Node->Bound)){
                 Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child1, NodeID.B + 1 });
@@ -1153,15 +1296,10 @@ public:
             const NodeType* Node = Nodes + NodeID.A;
 
             if(Node->IsLeaf()){
-                const ElementType* Exist = Data.Find(NodeID.A);
-                if(Exist){
-                    if(CollCheck(Node->Bound)){
-                        if(!Callback(NodeID.A, *Exist, NodeID.B + 1))
-                            return;
-                    }
+                if(CollCheck(Node->Bound)){
+                    if(!Callback(NodeID.A, __hidden_DynamicBVH::ReturnNodeData(*Node), NodeID.B + 1))
+                        return;
                 }
-                else
-                    ensure(Exist != nullptr);
             }
             else if(CollCheck(Node->Bound)){
                 Stack.Push(__hidden_DynamicBVH::Pair<SizeType>{ Node->Child1, NodeID.B + 1 });
@@ -1188,7 +1326,14 @@ public:
     }
 
 public:
-    SizeType NumLeaves()const{ return Data.Num(); }
+    SizeType NumLeaves()const{
+        SizeType Count = 0;
+        for(SizeType i = 0; i < NodeCapacity; ++i){
+            if(Nodes[i].IsLeaf())
+                ++Count;
+        }
+        return Count;
+    }
 
     SizeType GetHeight()const{
         if(Root == __hidden_DynamicBVH::NodeNull<SizeType>)
@@ -1233,71 +1378,6 @@ public:
     }
 
 public:
-    void RebuildBottomUp(){
-        SizeType* Nodes = reinterpret_cast<SizeType*>(Allocator::Allocate(NodeCount * sizeof(SizeType), 0));
-        SizeType Count = 0;
-
-        for(SizeType i = 0; i < NodeCapacity; ++i){
-            if(Nodes[i].Height < 0)
-                continue;
-
-            if(Nodes[i].IsLeaf()){
-                Nodes[i].Parent = __hidden_DynamicBVH::NodeNull<SizeType>;
-                Nodes[Count] = i;
-                ++Count;
-            }
-            else
-                FreeNode(i);
-        }
-
-        while(Count > 1){
-            FloatType MinCost = __hidden_DynamicBVH::FloatMax<FloatType>;
-            SizeType iMin = static_cast<SizeType>(-1), jMin = static_cast<SizeType>(-1);
-            for(SizeType i = 0; i < Count; ++i){
-                BoundType BoundI = Nodes[Nodes[i]].Bound;
-
-                for(SizeType j = i + 1; j < Count; ++j){
-                    BoundType BoundJ = Nodes[Nodes[j]].Bound;
-
-                    BoundType B;
-                    B.Combine(BoundI, BoundJ);
-
-                    const FloatType Cost = B.GetPerimeter();
-                    if(Cost < MinCost){
-                        iMin = i;
-                        jMin = j;
-                        MinCost = Cost;
-                    }
-                }
-            }
-
-            SizeType Index1 = Nodes[iMin];
-            SizeType Index2 = Nodes[jMin];
-            NodeType* Child1 = Nodes + Index1;
-            NodeType* Child2 = Nodes + Index2;
-
-            SizeType ParentIndex = AllocateNode();
-            NodeType* Parent = Nodes + ParentIndex;
-            Parent->Child1 = Index1;
-            Parent->Child2 = Index2;
-            Parent->Height = 1 + FMath::Max(Child1->Height, Child2->Height);
-            Parent->Bound.Combine(Child1->Bound, Child2->Bound);
-            Parent->Parent = __hidden_DynamicBVH::NodeNull<SizeType>;
-
-            Child1->Parent = ParentIndex;
-            Child2->Parent = ParentIndex;
-
-            Nodes[jMin] = Nodes[Count - 1];
-            Nodes[iMin] = ParentIndex;
-            --Count;
-        }
-
-        Root = Nodes[0];
-        Allocator::Deallocate(Nodes);
-
-        // Validate();
-    }
-
     void ShiftOrigin(const typename BoundType::Type& NewOrigin){
         for(SizeType i = 0; i < NodeCapacity; ++i)
             Nodes[i].Bound.Move(-NewOrigin);
@@ -1312,8 +1392,14 @@ private:
             NodeType* OldNodes = Nodes;
             NodeCapacity <<= 1;
             Nodes = reinterpret_cast<NodeType*>(Allocator::Allocate(NodeCapacity * sizeof(NodeType), 16));
-            for(SizeType i = 0; i < NodeCount; ++i)
+            for(SizeType i = 0; i < NodeCount; ++i){
                 Nodes[i] = MoveTemp(OldNodes[i]);
+
+                if(OldNodes[i].IsLeaf()){
+                    __hidden_DynamicBVH::ConstructNodeData(Nodes[i], MoveTemp(OldNodes[i]));
+                    __hidden_DynamicBVH::DestructNodeData(OldNodes[i]);
+                }
+            }
             Allocator::Deallocate(OldNodes);
 
             FPlatformMemory::Memzero(&Nodes[NodeCount], (NodeCapacity - NodeCount) * sizeof(NodeType));
@@ -1698,9 +1784,6 @@ private:
 
 
 private:
-    DataContainer Data;
-
-private:
     NodeType* Nodes;
 
     SizeType Root;
@@ -1711,6 +1794,10 @@ private:
     SizeType FreeList;
 
     SizeType InsertionCount;
+
+
+public:
+    friend TIterator;
 };
 
 

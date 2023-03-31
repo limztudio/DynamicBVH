@@ -1,4 +1,5 @@
 ﻿#include "ManagedActors.h"
+
 #include "ManagerSubsystem.h"
 
 
@@ -16,13 +17,6 @@ TAutoConsoleVariable<float> CVarDynamicSpeed(
     0.005f,
     TEXT("Dynamic actor move speed"),
     ECVF_Default
-);
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-static const FName NameOpaque(TEXT("Opaque"));
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -40,7 +34,7 @@ static uint64 FastRandomU64(){
 static float FastRandomF(){
     return static_cast<float>(((FastRandomU64() >> 8) & 0x00ffffff) / 16777216.f);
 }
-static FVector2f TAFastRandomF2(){
+static FVector2f FastRandomF2(){
     union{
         uint64 U64;
         struct{

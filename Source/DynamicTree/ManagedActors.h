@@ -2,10 +2,11 @@
 
 
 #include "CoreMinimal.h"
-#include "DynamicBVH.hpp"
 
 #include "Engine/StaticMeshActor.h"
 #include "Materials/MaterialInterface.h"
+
+#include "DynamicBVH.hpp"
 
 #include "ManagedActors.generated.h"
 

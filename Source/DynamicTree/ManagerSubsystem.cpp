@@ -16,15 +16,8 @@
 
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST) || USE_LOGGING_IN_SHIPPING
-#define LEAVE_STAT
-#endif
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-#ifdef LEAVE_STAT
 #include <chrono>
+#define LEAVE_STAT
 #endif
 
 

@@ -655,7 +655,6 @@ const TBVHBound<SizeType> TBVHBound<SizeType>::Error = __hidden_DynamicBVH::AABB
 
 struct TBVHAllocator{
     typedef int32 SizeType;
-    typedef int32 DiffType;
     typedef double FloatType;
 
     static void* Allocate(SizeType Size, SizeType Align){ return FMemory::Malloc(Size, Align); }
@@ -666,7 +665,6 @@ template<typename InElementType, typename InAllocator = TBVHAllocator, typename 
 class TDynamicBVH{
 public:
     typedef typename InAllocator::SizeType SizeType;
-    typedef typename InAllocator::DiffType DiffType;
     typedef typename InAllocator::FloatType FloatType;
     typedef InElementType ElementType;
     typedef __hidden_DynamicBVH::Node<ElementType, SizeType, BoundType> NodeType;

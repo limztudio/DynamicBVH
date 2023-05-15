@@ -54,7 +54,22 @@ static const FName NameLogLocalTimeTaken2(TEXT("LocalTimeTaken2"));
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-static FORCEINLINE bool IntersectSphereWithAABB(VectorRegister XMMSphereCentre, VectorRegister XMMSSphereRadius, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
+template<bool bCheckIfFullyContained>
+static FORCEINLINE uint8 IntersectSphereWithAABB(VectorRegister XMMSphereCentre, VectorRegister XMMSSphereRadius, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
+    if(bCheckIfFullyContained){
+        VectorRegister XMMBoxMaxLength = VectorSubtract(XMMBoxUpper, XMMBoxLower);
+        VectorRegister XMMSBoxMaxLengthX = VectorReplicate(XMMBoxMaxLength, 0);
+        VectorRegister XMMSBoxMaxLengthY = VectorReplicate(XMMBoxMaxLength, 1);
+        VectorRegister XMMSBoxMaxLengthZ = VectorReplicate(XMMBoxMaxLength, 2);
+        
+        VectorRegister XMMSBoxMaxLength = VectorMax(XMMSBoxMaxLengthX, XMMSBoxMaxLengthY);
+        XMMSBoxMaxLength = VectorMax(XMMSBoxMaxLength, XMMSBoxMaxLengthZ);
+
+        VectorRegister XMMSSphereMaxLength = VectorMultiply(XMMSSphereRadius, GlobalVectorConstants::DoubleTwo);
+        if(VectorMaskBits(VectorCompareLE(XMMSBoxMaxLength, XMMSSphereMaxLength)))
+            return 0x02;
+    }
+    
     VectorRegister XMMTmp;
 
     VectorRegister XMMClosest;
@@ -72,10 +87,13 @@ static FORCEINLINE bool IntersectSphereWithAABB(VectorRegister XMMSphereCentre, 
     XMMSSphereRadius = VectorMultiply(XMMSSphereRadius, XMMSSphereRadius);
 
     XMMTmp = VectorCompareLT(XMMTmp, XMMSSphereRadius);
-    return (VectorMaskBits(XMMTmp) & 0x01) != 0;
+    return ((VectorMaskBits(XMMTmp) & 0x01) != 0) ? 0x01 : 0x00;
 }
 
-static FORCEINLINE bool IntersectFrustumWithAABB(const FConvexVolume::FPermutedPlaneArray& PermutedPlanes, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
+template<bool bCheckIfFullyContained>
+static FORCEINLINE uint8 IntersectFrustumWithAABB(const FConvexVolume::FPermutedPlaneArray& PermutedPlanes, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
+    bool bContained = true;
+    
     VectorRegister XMMBoxOrigin = VectorAdd(XMMBoxUpper, XMMBoxLower);
     XMMBoxOrigin = VectorMultiply(XMMBoxOrigin, GlobalVectorConstants::DoubleOneHalf);
     VectorRegister XMMBoxExtent = VectorSubtract(XMMBoxUpper, XMMBoxOrigin);
@@ -90,6 +108,7 @@ static FORCEINLINE bool IntersectFrustumWithAABB(const FConvexVolume::FPermutedP
     VectorRegister XMMExtentZ = VectorReplicate(XMMBoxExtent, 2);
     // Since we are moving straight through get a pointer to the data
     const FPlane* RESTRICT PermutedPlanePtr = (FPlane*)PermutedPlanes.GetData();
+    
     // Process four planes at a time until we have < 4 left
     for(int32 Count = 0, Num = PermutedPlanes.Num(); Count < Num; Count += 4){
         // Load 4 planes that are already all Xs, Ys, ...
@@ -111,11 +130,25 @@ static FORCEINLINE bool IntersectFrustumWithAABB(const FConvexVolume::FPermutedP
         VectorRegister XMMPushY = VectorMultiplyAdd(XMMExtentY, VectorAbs(XMMPlanesY), XMMPushX);
         VectorRegister XMMPushOut = VectorMultiplyAdd(XMMExtentZ, VectorAbs(XMMPlanesZ), XMMPushY);
 
-        // Check for completely outside
-        if(VectorAnyGreaterThan(XMMDistance, XMMPushOut))
-            return false;
+        if(bCheckIfFullyContained){
+            // Check for completely outside
+            if(VectorAnyGreaterThan(XMMDistance, XMMPushOut)){
+                bContained = false;
+                return 0x00;
+            }
+
+            // Definitely inside frustums, but check to see if it's fully contained
+            if(VectorAnyGreaterThan(XMMDistance,VectorNegate(XMMPushOut)))
+                bContained = false;
+        }
+        else{
+            // Check for completely outside
+            if(VectorAnyGreaterThan(XMMDistance, XMMPushOut))
+                return 0x00;
+        }
     }
-    return true;
+    
+    return bCheckIfFullyContained ? (bContained ? 0x02 : 0x01) : 0x01;
 }
 
 
@@ -362,7 +395,15 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
             Tree.Query(
 #endif
                 [DetectRadius, &ViewLocation](const TBVHBound<double>& CurBound){
-                    return IntersectSphereWithAABB(
+                    return IntersectSphereWithAABB<true>(
+                        VectorLoadAligned(&ViewLocation),
+                        VectorSetDouble1(DetectRadius),
+                        VectorLoadAligned(&CurBound.Lower),
+                        VectorLoadAligned(&CurBound.Upper)
+                        );
+                },
+                [DetectRadius, &ViewLocation](const TBVHBound<double>& CurBound){
+                    return IntersectSphereWithAABB<false>(
                         VectorLoadAligned(&ViewLocation),
                         VectorSetDouble1(DetectRadius),
                         VectorLoadAligned(&CurBound.Lower),
@@ -406,7 +447,7 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
                     continue;
 
                 const auto& CurBound = Actor->GetWorldBound();
-                if(!IntersectSphereWithAABB(
+                if(!IntersectSphereWithAABB<false>(
                     VectorLoadAligned(&ViewLocation),
                     VectorSetDouble1(DetectRadius),
                     VectorLoadAligned(&CurBound.Lower),
@@ -446,7 +487,14 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
     if(CVarManagerUseBVH.GetValueOnGameThread()){
         Tree.Query(
             [&ViewFrustum](const TBVHBound<double>& CurBound){
-                return IntersectFrustumWithAABB(
+                return IntersectFrustumWithAABB<true>(
+                    ViewFrustum.PermutedPlanes,
+                    VectorLoadAligned(&CurBound.Lower),
+                    VectorLoadAligned(&CurBound.Upper)
+                    );
+            },
+            [&ViewFrustum](const TBVHBound<double>& CurBound){
+                return IntersectFrustumWithAABB<false>(
                     ViewFrustum.PermutedPlanes,
                     VectorLoadAligned(&CurBound.Lower),
                     VectorLoadAligned(&CurBound.Upper)
@@ -466,7 +514,7 @@ void UManagerSubsystem::Tick(float DeltaSeconds){
                 continue;
 
             const auto& CurBound = Actor->GetWorldBound();
-            if(!IntersectFrustumWithAABB(
+            if(!IntersectFrustumWithAABB<false>(
                 ViewFrustum.PermutedPlanes,
                 VectorLoadAligned(&CurBound.Lower),
                 VectorLoadAligned(&CurBound.Upper)

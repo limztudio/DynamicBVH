@@ -56,21 +56,18 @@ static const FName NameLogLocalTimeTaken2(TEXT("LocalTimeTaken2"));
 
 template<bool bCheckIfFullyContained>
 static FORCEINLINE uint8 IntersectSphereWithAABB(VectorRegister XMMSphereCentre, VectorRegister XMMSSphereRadius, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
+    VectorRegister XMMTmp;
+    
     if(bCheckIfFullyContained){
-        VectorRegister XMMBoxMaxLength = VectorSubtract(XMMBoxUpper, XMMBoxLower);
-        VectorRegister XMMSBoxMaxLengthX = VectorReplicate(XMMBoxMaxLength, 0);
-        VectorRegister XMMSBoxMaxLengthY = VectorReplicate(XMMBoxMaxLength, 1);
-        VectorRegister XMMSBoxMaxLengthZ = VectorReplicate(XMMBoxMaxLength, 2);
-        
-        VectorRegister XMMSBoxMaxLength = VectorMax(XMMSBoxMaxLengthX, XMMSBoxMaxLengthY);
-        XMMSBoxMaxLength = VectorMax(XMMSBoxMaxLength, XMMSBoxMaxLengthZ);
+        XMMTmp = VectorSubtract(XMMBoxUpper, XMMBoxLower);
+        XMMTmp = VectorDot3(XMMTmp, XMMTmp);
 
-        VectorRegister XMMSSphereMaxLength = VectorMultiply(XMMSSphereRadius, GlobalVectorConstants::DoubleTwo);
-        if(VectorMaskBits(VectorCompareLE(XMMSBoxMaxLength, XMMSSphereMaxLength)))
+        VectorRegister XMMSSphereLenSq = VectorAdd(XMMSSphereRadius, XMMSSphereRadius);
+        XMMSSphereLenSq = VectorMultiply(XMMSSphereLenSq, XMMSSphereLenSq);
+
+        if(VectorMaskBits(VectorCompareLE(XMMTmp, XMMSSphereLenSq)))
             return 0x02;
     }
-    
-    VectorRegister XMMTmp;
 
     VectorRegister XMMClosest;
     {

@@ -57,23 +57,11 @@ static const FName NameLogLocalTimeTaken2(TEXT("LocalTimeTaken2"));
 template<bool bCheckIfFullyContained>
 static FORCEINLINE uint8 IntersectSphereWithAABB(VectorRegister XMMSphereCentre, VectorRegister XMMSSphereRadius, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
     VectorRegister XMMTmp;
-    
-    if(bCheckIfFullyContained){
-        XMMTmp = VectorSubtract(XMMBoxUpper, XMMBoxLower);
-        XMMTmp = VectorDot3(XMMTmp, XMMTmp);
-
-        VectorRegister XMMSSphereLenSq = VectorAdd(XMMSSphereRadius, XMMSSphereRadius);
-        XMMSSphereLenSq = VectorMultiply(XMMSSphereLenSq, XMMSSphereLenSq);
-
-        if(VectorMaskBits(VectorCompareLE(XMMTmp, XMMSSphereLenSq)))
-            return 0x02;
-    }
-
     VectorRegister XMMClosest;
     {
         XMMTmp = VectorCompareGE(XMMSphereCentre, XMMBoxUpper);
         XMMClosest = VectorSelect(XMMTmp, XMMBoxUpper, XMMSphereCentre);
-    
+
         XMMTmp = VectorCompareLE(XMMSphereCentre, XMMBoxLower);
         XMMClosest = VectorSelect(XMMTmp, XMMBoxLower, XMMClosest);
     }
@@ -81,10 +69,29 @@ static FORCEINLINE uint8 IntersectSphereWithAABB(VectorRegister XMMSphereCentre,
     XMMTmp = VectorSubtract(XMMClosest, XMMSphereCentre);
     XMMTmp = VectorDot3(XMMTmp, XMMTmp);
 
-    XMMSSphereRadius = VectorMultiply(XMMSSphereRadius, XMMSSphereRadius);
+    VectorRegister XMMSSphereRadiusSq = VectorMultiply(XMMSSphereRadius, XMMSSphereRadius);
 
-    XMMTmp = VectorCompareLT(XMMTmp, XMMSSphereRadius);
-    return ((VectorMaskBits(XMMTmp) & 0x01) != 0) ? 0x01 : 0x00;
+    XMMTmp = VectorCompareLT(XMMTmp, XMMSSphereRadiusSq);
+    if(VectorMaskBits(XMMTmp) & 0x01){
+        if(bCheckIfFullyContained){
+            do{
+                XMMTmp = VectorSubtract(XMMSphereCentre, XMMSSphereRadius);
+                if((VectorMaskBits(VectorCompareGT(XMMTmp, XMMBoxLower)) & 0x07))
+                    break;
+
+                XMMTmp = VectorAdd(XMMSphereCentre, XMMSSphereRadius);
+                if((VectorMaskBits(VectorCompareGT(XMMTmp, XMMBoxUpper)) & 0x07))
+                    break;
+
+                return 0x02;
+            }
+            while(false);
+        }
+
+        return 0x01;
+    }
+
+    return 0x00;
 }
 
 template<bool bCheckIfFullyContained>

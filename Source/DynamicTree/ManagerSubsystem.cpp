@@ -58,6 +58,39 @@ template<bool bCheckIfFullyContained>
 static FORCEINLINE uint8 IntersectSphereWithAABB(VectorRegister XMMSphereCentre, VectorRegister XMMSSphereRadius, VectorRegister XMMBoxLower, VectorRegister XMMBoxUpper){
     VectorRegister XMMTmp;
     VectorRegister XMMClosest;
+
+    VectorRegister XMMSSphereRadiusSq = VectorMultiply(XMMSSphereRadius, XMMSSphereRadius);
+
+    if(bCheckIfFullyContained){
+        static const VectorRegister XMMMask1010 = MakeVectorRegisterDoubleMask(~uint64(0), uint64(0), ~uint64(0), uint64(0));
+        static const VectorRegister XMMMask0110 = MakeVectorRegisterDoubleMask(uint64(0), ~uint64(0), ~uint64(0), uint64(0));
+        static const VectorRegister XMMMask1000 = MakeVectorRegisterDoubleMask(~int64(0), uint64(0), uint64(0), uint64(0));
+        static const VectorRegister XMMMask0100 = MakeVectorRegisterDoubleMask(int64(0), ~uint64(0), uint64(0), uint64(0));
+        
+        VectorRegister XMMVerts[] = {
+            XMMBoxLower,
+            VectorShuffle(XMMBoxLower, XMMBoxUpper, 0, 1, 2, 3),
+            VectorSelect(XMMMask1010, XMMBoxLower, XMMBoxUpper),
+            VectorSelect(XMMMask0110, XMMBoxLower, XMMBoxUpper),
+            VectorSelect(XMMMask1000, XMMBoxLower, XMMBoxUpper),
+            VectorSelect(XMMMask0100, XMMBoxLower, XMMBoxUpper),
+            VectorShuffle(XMMBoxUpper, XMMBoxLower, 0, 1, 2, 3),
+            XMMBoxUpper,
+        };
+
+        for(const auto& XMMVert : XMMVerts){
+            XMMTmp = VectorSubtract(XMMSphereCentre, XMMVert);
+            XMMTmp = VectorDot3(XMMTmp, XMMTmp);
+
+            XMMTmp = VectorCompareGT(XMMTmp, XMMSSphereRadiusSq);
+            if(VectorMaskBits(XMMTmp) & 0x01)
+                goto CHECK_IF_INTERSECT_BUT_NOT_CONTAINED;
+        }
+
+        return 0x02;
+    }
+
+CHECK_IF_INTERSECT_BUT_NOT_CONTAINED:
     {
         XMMTmp = VectorCompareGE(XMMSphereCentre, XMMBoxUpper);
         XMMClosest = VectorSelect(XMMTmp, XMMBoxUpper, XMMSphereCentre);
@@ -69,27 +102,9 @@ static FORCEINLINE uint8 IntersectSphereWithAABB(VectorRegister XMMSphereCentre,
     XMMTmp = VectorSubtract(XMMClosest, XMMSphereCentre);
     XMMTmp = VectorDot3(XMMTmp, XMMTmp);
 
-    VectorRegister XMMSSphereRadiusSq = VectorMultiply(XMMSSphereRadius, XMMSSphereRadius);
-
     XMMTmp = VectorCompareLT(XMMTmp, XMMSSphereRadiusSq);
-    if(VectorMaskBits(XMMTmp) & 0x01){
-        if(bCheckIfFullyContained){
-            do{
-                XMMTmp = VectorSubtract(XMMSphereCentre, XMMSSphereRadius);
-                if((VectorMaskBits(VectorCompareGT(XMMTmp, XMMBoxLower)) & 0x07))
-                    break;
-
-                XMMTmp = VectorAdd(XMMSphereCentre, XMMSSphereRadius);
-                if((VectorMaskBits(VectorCompareGT(XMMTmp, XMMBoxUpper)) & 0x07))
-                    break;
-
-                return 0x02;
-            }
-            while(false);
-        }
-
+    if(VectorMaskBits(XMMTmp) & 0x01)
         return 0x01;
-    }
 
     return 0x00;
 }
